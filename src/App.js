@@ -55,18 +55,18 @@ const Modal = ({ isOpen, onClose, title, children }) => {
 
 // --- API Helper ---
 const fetchWithRetry = async (url, options, maxRetries = 3, setError) => {
-    let retryDelay = 5000; // 5 seconds
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         const response = await fetch(url, options);
         if (response.ok) {
             return response.json();
         }
         if (response.status === 429 && attempt < maxRetries - 1) {
+            const retryDelay = 5000 * Math.pow(2, attempt);
             const message = `Rate limit hit. Retrying in ${retryDelay / 1000} seconds...`;
             console.log(message);
             if (setError) setError(message);
+            // eslint-disable-next-line no-loop-func
             await new Promise(resolve => setTimeout(resolve, retryDelay));
-            retryDelay *= 2; // Exponential backoff
         } else {
             throw new Error(`API call failed: ${response.status}`);
         }
@@ -157,17 +157,10 @@ const App = () => {
       const savedPortfolio = localStorage.getItem('financialAgentPortfolio');
       if (savedPortfolio) setPortfolio(JSON.parse(savedPortfolio));
       
-      const savedGeminiKey = localStorage.getItem('geminiApiKey');
-      if (savedGeminiKey) setGeminiApiKey(savedGeminiKey);
-      
-      const savedChatGptKey = localStorage.getItem('chatGptApiKey');
-      if (savedChatGptKey) setChatGptApiKey(savedChatGptKey);
-
-      const savedCohereKey = localStorage.getItem('cohereApiKey');
-      if (savedCohereKey) setCohereApiKey(savedCohereKey);
-      
-      const savedFmpKey = localStorage.getItem('fmpApiKey');
-      if (savedFmpKey) setFmpApiKey(savedFmpKey);
+      setGeminiApiKey(localStorage.getItem('geminiApiKey') || DEFAULT_GEMINI_API_KEY);
+      setChatGptApiKey(localStorage.getItem('chatGptApiKey') || DEFAULT_CHATGPT_API_KEY);
+      setCohereApiKey(localStorage.getItem('cohereApiKey') || DEFAULT_COHERE_API_KEY);
+      setFmpApiKey(localStorage.getItem('fmpApiKey') || DEFAULT_FMP_API_KEY);
 
     } catch (e) {
       console.error("Failed to load from localStorage", e);
@@ -431,7 +424,7 @@ const App = () => {
             return;
         };
 
-        const prompt = `Based on the following recent news headlines, determine the overall market sentiment. The headlines are: "${newsHeadlines}". Return a JSON object with two keys: "sentiment" (either 'Bullish', 'Bearish', or 'Neutral') and "reason" (a brief, one-sentence explanation for the sentiment).`;
+        const prompt = `Based on the following recent news headlines, determine the overall market sentiment. The headlines are: "${newsHeadlines}". Return a JSON object with two keys: "sentiment" (either 'Bullish', 'Bearish', 'Neutral') and "reason" (a brief, one-sentence explanation for the sentiment).`;
         
         const rawText = await fetchWithGeminiFallback(prompt, prompt, "Market Sentiment");
         const sentimentData = extractJson(rawText, 'object');
@@ -444,7 +437,7 @@ const App = () => {
     } finally {
         setLoadingSentiment(false);
     }
-  }, [geminiApiKey, cohereApiKey, events, fetchWithGeminiFallback]);
+  }, [geminiApiKey, events, fetchWithGeminiFallback]);
 
   const fetchPortfolioReview = useCallback(async () => {
     if (!geminiApiKey || portfolio.length === 0) {
@@ -619,7 +612,7 @@ const App = () => {
 
   const handleSaveEdit = (ticker) => {
     const newSharesValue = parseFloat(editingShares);
-    if (isNaN(newSharesValue) || newSharesValue <= 0) {
+    if (isNaN(newSharesValue) || newSharesValue < 0) {
         setError("Please enter a valid number of shares.");
         return;
     }
@@ -723,10 +716,8 @@ const App = () => {
         </IconButton>
       </header>
 
-      <main className="p-4 md:p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* --- Control Panel --- */}
-          <aside className="lg:col-span-1 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg h-fit sticky top-24">
+      <div className="flex">
+        <aside className="w-96 bg-white dark:bg-gray-800 p-6 h-screen sticky top-16 overflow-y-auto">
             <h2 className="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Configuration</h2>
             <div className="space-y-6">
               <div>
@@ -774,259 +765,259 @@ const App = () => {
             </div>
           </aside>
 
-          {/* --- Results Panel --- */}
-          <section className="lg:col-span-3 space-y-8">
-            <Card>
-                <div className="p-5">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center">
-                            <LucideGauge className="w-7 h-7 text-blue-500 mr-3"/>
-                            <h2 className="text-2xl font-bold">Market Sentiment</h2>
+          <main className="flex-1 p-4 md:p-8">
+            <section className="space-y-8">
+                <Card>
+                    <div className="p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center">
+                                <LucideGauge className="w-7 h-7 text-blue-500 mr-3"/>
+                                <h2 className="text-2xl font-bold">Market Sentiment</h2>
+                            </div>
+                            {loadingSentiment && <LucideLoader2 className="w-6 h-6 animate-spin text-blue-500" />}
                         </div>
-                        {loadingSentiment && <LucideLoader2 className="w-6 h-6 animate-spin text-blue-500" />}
+                        {marketSentiment ? (
+                            <div>
+                                <p className={`text-3xl font-bold text-center mb-2 ${getSentimentColor(marketSentiment.sentiment)}`}>{marketSentiment.sentiment}</p>
+                                <p className="text-center text-sm text-gray-600 dark:text-gray-400 italic">"{marketSentiment.reason}"</p>
+                            </div>
+                        ) : (
+                            <p className="text-center text-gray-500 p-4">Start the agent to analyze market sentiment.</p>
+                        )}
                     </div>
-                    {marketSentiment ? (
-                        <div>
-                            <p className={`text-3xl font-bold text-center mb-2 ${getSentimentColor(marketSentiment.sentiment)}`}>{marketSentiment.sentiment}</p>
-                            <p className="text-center text-sm text-gray-600 dark:text-gray-400 italic">"{marketSentiment.reason}"</p>
-                        </div>
-                    ) : (
-                        <p className="text-center text-gray-500 p-4">Start the agent to analyze market sentiment.</p>
-                    )}
-                </div>
-            </Card>
+                </Card>
 
-            {/* --- Portfolio Watchlist --- */}
-            <Card>
-                <div className="p-5">
-                    <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
-                        <div className="flex items-center">
-                            <LucideWallet className="w-7 h-7 text-blue-500 mr-3"/>
-                            <h2 className="text-2xl font-bold">Portfolio Watchlist</h2>
+                {/* --- Portfolio Watchlist --- */}
+                <Card>
+                    <div className="p-5">
+                        <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
+                            <div className="flex items-center">
+                                <LucideWallet className="w-7 h-7 text-blue-500 mr-3"/>
+                                <h2 className="text-2xl font-bold">Portfolio Watchlist</h2>
+                            </div>
+                            <div className="flex items-center gap-2">
+                               <IconButton onClick={() => fileInputRef.current.click()} icon={LucideUpload} className="bg-gray-600 hover:bg-gray-700 focus:ring-gray-500 text-xs px-3 py-1.5">Import</IconButton>
+                               <input type="file" ref={fileInputRef} onChange={handleImport} accept=".csv" className="hidden" />
+                               <IconButton onClick={handleExport} icon={LucideDownload} className="bg-gray-600 hover:bg-gray-700 focus:ring-gray-500 text-xs px-3 py-1.5">Export</IconButton>
+                               <IconButton onClick={fetchPortfolioReview} icon={LucideSparkles} disabled={loadingReview} className="bg-purple-500 hover:bg-purple-600 focus:ring-purple-400 text-xs px-3 py-1.5">Review Portfolio</IconButton>
+                               {loadingPrices && <LucideLoader2 className="w-6 h-6 animate-spin text-blue-500" />}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                           <IconButton onClick={() => fileInputRef.current.click()} icon={LucideUpload} className="bg-gray-600 hover:bg-gray-700 focus:ring-gray-500 text-xs px-3 py-1.5">Import</IconButton>
-                           <input type="file" ref={fileInputRef} onChange={handleImport} accept=".csv" className="hidden" />
-                           <IconButton onClick={handleExport} icon={LucideDownload} className="bg-gray-600 hover:bg-gray-700 focus:ring-gray-500 text-xs px-3 py-1.5">Export</IconButton>
-                           <IconButton onClick={fetchPortfolioReview} icon={LucideSparkles} disabled={loadingReview} className="bg-purple-500 hover:bg-purple-600 focus:ring-purple-400 text-xs px-3 py-1.5">Review Portfolio</IconButton>
-                           {loadingPrices && <LucideLoader2 className="w-6 h-6 animate-spin text-blue-500" />}
-                        </div>
-                    </div>
-                    <form onSubmit={handleAddStock} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                        <input type="text" value={newTicker} onChange={e => setNewTicker(e.target.value)} placeholder="Stock Ticker (e.g., AAPL)" className="sm:col-span-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500" />
-                        <input type="number" value={newShares} onChange={e => setNewShares(e.target.value)} placeholder="Number of Shares" className="sm:col-span-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500" />
-                        <IconButton icon={LucidePlusCircle} type="submit" className="sm:col-span-1 bg-blue-500 hover:bg-blue-600 focus:ring-blue-400">Add Stock</IconButton>
-                    </form>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b dark:border-gray-700">
-                                    <th className="p-3">Ticker</th><th className="p-3">Shares</th><th className="p-3">Price</th><th className="p-3">Day's Change</th><th className="p-3">Value</th><th className="p-3">Latest Signal</th><th className="p-3">Reason</th><th className="p-3">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {portfolio.length === 0 ? (
-                                    <tr><td colSpan="8" className="text-center p-8 text-gray-500">Add stocks to your portfolio or import a CSV file.</td></tr>
-                                ) : portfolio.map(stock => {
-                                    const data = portfolioPrices[stock.ticker];
-                                    const price = data?.price || 0;
-                                    const change = data?.change || 0;
-                                    const changePercent = data?.changePercent || 0;
-                                    const value = price * stock.shares;
-                                    const changeColor = change > 0 ? 'text-green-500' : change < 0 ? 'text-red-500' : 'text-gray-500';
-                                    const latestEvent = events.find(e => e.affected_stocks && Array.isArray(e.affected_stocks) && e.affected_stocks.includes(stock.ticker));
-                                    const isEditing = editingTicker === stock.ticker;
-                                    return (
-                                        <tr key={stock.ticker} className="border-b dark:border-gray-700 last:border-b-0">
-                                            <td className="p-3 font-bold">{stock.ticker}</td>
-                                            <td className="p-3">
-                                                {isEditing ? (
-                                                    <input type="number" value={editingShares} onChange={e => setEditingShares(e.target.value)} className="w-24 p-1 border rounded-md bg-gray-100 dark:bg-gray-700" />
-                                                ) : (
-                                                    stock.shares.toLocaleString()
-                                                )}
-                                            </td>
-                                            <td className="p-3">{price > 0 ? `$${price.toFixed(2)}` : <LucideLoader2 className="w-4 h-4 animate-spin"/>}</td><td className={`p-3 font-medium ${changeColor}`}>{change.toFixed(2)} ({changePercent.toFixed(2)}%)</td><td className="p-3 font-medium">{`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}</td>
-                                            <td className="p-3">{latestEvent ? (<Badge className={`font-bold ${getRecommendationColor(latestEvent.recommendation)}`}>{latestEvent.recommendation}</Badge>) : (<span className="text-gray-500">-</span>)}</td>
-                                            <td className="p-3 text-xs text-gray-500 italic max-w-xs truncate">{latestEvent ? latestEvent.reason : '-'}</td>
-                                            <td className="p-3">
-                                                {isEditing ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <button onClick={() => handleSaveEdit(stock.ticker)} className="text-green-500 hover:text-green-700"><LucideSave className="w-5 h-5" /></button>
-                                                        <button onClick={handleCancelEdit} className="text-gray-500 hover:text-gray-700"><LucideXCircle className="w-5 h-5" /></button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        <button onClick={() => handleEditClick(stock)} className="text-blue-500 hover:text-blue-700"><LucidePencil className="w-5 h-5" /></button>
-                                                        <button onClick={() => handleRemoveStock(stock.ticker)} className="text-red-500 hover:text-red-700"><LucideTrash2 className="w-5 h-5"/></button>
-                                                    </div>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                            <tfoot>
-                                <tr className="border-t-2 font-bold dark:border-gray-700">
-                                    <td className="p-3" colSpan="4">Total Value</td>
-                                    <td className="p-3" colSpan="4">{`$${totalPortfolioValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-            </Card>
-            
-            <Card>
-                <div className="p-5">
-                    <div className="flex items-center mb-4">
-                        <LucideTarget className="w-7 h-7 text-green-500 mr-3"/>
-                        <h2 className="text-2xl font-bold">Potential Buys</h2>
-                    </div>
-                    {allPotentialBuys.length > 0 ? (
+                        <form onSubmit={handleAddStock} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                            <input type="text" value={newTicker} onChange={e => setNewTicker(e.target.value)} placeholder="Stock Ticker (e.g., AAPL)" className="sm:col-span-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500" />
+                            <input type="number" value={newShares} onChange={e => setNewShares(e.target.value)} placeholder="Number of Shares" className="sm:col-span-1 w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500" />
+                            <IconButton icon={LucidePlusCircle} type="submit" className="sm:col-span-1 bg-blue-500 hover:bg-blue-600 focus:ring-blue-400">Add Stock</IconButton>
+                        </form>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
+                            <table className="w-full text-left">
                                 <thead>
                                     <tr className="border-b dark:border-gray-700">
-                                        <th className="p-2">Ticker</th><th className="p-2">Action</th><th className="p-2">Source</th><th className="p-2">Current Price</th><th className="p-2">Limit Price</th><th className="p-2">Shares</th><th className="p-2">Risk</th>
+                                        <th className="p-3">Ticker</th><th className="p-3">Shares</th><th className="p-3">Price</th><th className="p-3">Day's Change</th><th className="p-3">Value</th><th className="p-3">Latest Signal</th><th className="p-3">Reason</th><th className="p-3">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {allPotentialBuys.map((buy, index) => {
-                                        const price = portfolioPrices[buy.ticker]?.price || 0;
+                                    {portfolio.length === 0 ? (
+                                        <tr><td colSpan="8" className="text-center p-8 text-gray-500">Add stocks to your portfolio or import a CSV file.</td></tr>
+                                    ) : portfolio.map(stock => {
+                                        const data = portfolioPrices[stock.ticker];
+                                        const price = data?.price || 0;
+                                        const change = data?.change || 0;
+                                        const changePercent = data?.changePercent || 0;
+                                        const value = price * stock.shares;
+                                        const changeColor = change > 0 ? 'text-green-500' : change < 0 ? 'text-red-500' : 'text-gray-500';
+                                        const latestEvent = events.find(e => e.affected_stocks && Array.isArray(e.affected_stocks) && e.affected_stocks.includes(stock.ticker));
+                                        const isEditing = editingTicker === stock.ticker;
                                         return (
-                                            <tr key={index} className="border-b dark:border-gray-700 last:border-b-0">
-                                                <td className="p-2 font-bold">{buy.ticker}</td>
-                                                <td className="p-2"><Badge className={getRecommendationColor(buy.action)}>{buy.action}</Badge></td>
-                                                <td className="p-2"><Badge className="bg-gray-200 text-gray-800">{buy.source}</Badge></td>
-                                                <td className="p-2">{price > 0 ? `$${price.toFixed(2)}` : <LucideLoader2 className="w-4 h-4 animate-spin"/>}</td>
-                                                <td className="p-2">{buy.limit_price ? `$${buy.limit_price.toFixed(2)}` : '-'}</td>
-                                                <td className="p-2">{buy.suggested_shares}</td>
-                                                <td className="p-2"><Badge className={getRiskColor(buy.risk_level)}>{buy.risk_level}</Badge></td>
+                                            <tr key={stock.ticker} className="border-b dark:border-gray-700 last:border-b-0">
+                                                <td className="p-3 font-bold">{stock.ticker}</td>
+                                                <td className="p-3">
+                                                    {isEditing ? (
+                                                        <input type="number" value={editingShares} onChange={e => setEditingShares(e.target.value)} className="w-24 p-1 border rounded-md bg-gray-100 dark:bg-gray-700" />
+                                                    ) : (
+                                                        stock.shares.toLocaleString()
+                                                    )}
+                                                </td>
+                                                <td className="p-3">{price > 0 ? `$${price.toFixed(2)}` : <LucideLoader2 className="w-4 h-4 animate-spin"/>}</td><td className={`p-3 font-medium ${changeColor}`}>{change.toFixed(2)} ({changePercent.toFixed(2)}%)</td><td className="p-3 font-medium">{`$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}</td>
+                                                <td className="p-3">{latestEvent ? (<Badge className={`font-bold ${getRecommendationColor(latestEvent.recommendation)}`}>{latestEvent.recommendation}</Badge>) : (<span className="text-gray-500">-</span>)}</td>
+                                                <td className="p-3 text-xs text-gray-500 italic max-w-xs truncate">{latestEvent ? latestEvent.reason : '-'}</td>
+                                                <td className="p-3">
+                                                    {isEditing ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => handleSaveEdit(stock.ticker)} className="text-green-500 hover:text-green-700"><LucideSave className="w-5 h-5" /></button>
+                                                            <button onClick={handleCancelEdit} className="text-gray-500 hover:text-gray-700"><LucideXCircle className="w-5 h-5" /></button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => handleEditClick(stock)} className="text-blue-500 hover:text-blue-700"><LucidePencil className="w-5 h-5" /></button>
+                                                            <button onClick={() => handleRemoveStock(stock.ticker)} className="text-red-500 hover:text-red-700"><LucideTrash2 className="w-5 h-5"/></button>
+                                                        </div>
+                                                    )}
+                                                </td>
                                             </tr>
                                         );
                                     })}
                                 </tbody>
+                                <tfoot>
+                                    <tr className="border-t-2 font-bold dark:border-gray-700">
+                                        <td className="p-3" colSpan="4">Total Value</td>
+                                        <td className="p-3" colSpan="4">{`$${totalPortfolioValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`}</td>
+                                    </tr>
+                                </tfoot>
                             </table>
                         </div>
-                    ) : (
-                        <p className="text-center text-gray-500 p-8">No "Buy" recommendations found. Run the agent to find opportunities.</p>
-                    )}
-                </div>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <Card>
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center"><LucideBrainCircuit className="w-7 h-7 text-purple-500 mr-3"/><h2 className="text-2xl font-bold">Gemini Ideas</h2></div>
-                    {loadingGeminiRec && <LucideLoader2 className="w-6 h-6 animate-spin text-purple-500" />}
-                  </div>
-                  {geminiRec.length > 0 ? (
-                    <div className="space-y-4">
-                        {geminiRec.map((rec, index) => (
-                            <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
-                                <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
-                            </div>
-                        ))}
                     </div>
-                  ) : (<p className="text-center text-gray-500 p-8">Start the agent to generate ideas. Ideas refresh every 3 hours.</p>)}
-                </div>
-              </Card>
-              <Card>
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center"><LucideBot className="w-7 h-7 text-teal-500 mr-3"/><h2 className="text-2xl font-bold">Analyst AI (Sim)</h2></div>
-                    {loadingAnalystRec && <LucideLoader2 className="w-6 h-6 animate-spin text-teal-500" />}
-                  </div>
-                   {analystRec.length > 0 ? (
-                    <div className="space-y-4">
-                        {analystRec.map((rec, index) => (
-                           <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
-                                <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
-                            </div>
-                        ))}
-                    </div>
-                  ) : (<p className="text-center text-gray-500 p-8">Start the agent to generate ideas. Ideas refresh every 3 hours.</p>)}
-                </div>
-              </Card>
-              <Card>
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center"><LucideBot className="w-7 h-7 text-blue-500 mr-3"/><h2 className="text-2xl font-bold">ChatGPT Ideas</h2></div>
-                    <IconButton onClick={() => fetchRecommendations('chatgpt')} icon={LucideLightbulb} disabled={!chatGptApiKey || loadingChatGptRec} className="bg-blue-500 hover:bg-blue-600 focus:ring-blue-400">Generate</IconButton>
-                  </div>
-                   {loadingChatGptRec ? <div className="flex justify-center items-center p-8"><LucideLoader2 className="w-8 h-8 animate-spin"/></div> : chatGptRec.length > 0 ? (
-                    <div className="space-y-4">
-                        {chatGptRec.map((rec, index) => (
-                           <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
-                                <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
-                            </div>
-                        ))}
-                    </div>
-                  ) : (<p className="text-center text-gray-500 p-8">Click "Generate" to get ideas from ChatGPT.</p>)}
-                </div>
-              </Card>
-              <Card>
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center"><LucideBot className="w-7 h-7 text-indigo-500 mr-3"/><h2 className="text-2xl font-bold">Cohere Ideas</h2></div>
-                    <IconButton onClick={() => fetchRecommendations('cohere')} icon={LucideLightbulb} disabled={!cohereApiKey || loadingCohereRec} className="bg-indigo-500 hover:bg-indigo-600 focus:ring-indigo-400">Generate</IconButton>
-                  </div>
-                   {loadingCohereRec ? <div className="flex justify-center items-center p-8"><LucideLoader2 className="w-8 h-8 animate-spin"/></div> : cohereRec.length > 0 ? (
-                    <div className="space-y-4">
-                        {cohereRec.map((rec, index) => (
-                           <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
-                                <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
-                            </div>
-                        ))}
-                    </div>
-                  ) : (<p className="text-center text-gray-500 p-8">Click "Generate" to get ideas from Cohere.</p>)}
-                </div>
-              </Card>
-            </div>
-
-            {/* --- Financial Events Feed --- */}
-            <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-2xl font-bold">Financial Events Feed</h2>
-                  {loading && <LucideLoader2 className="w-6 h-6 animate-spin text-blue-500" />}
-                </div>
-
-                {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg mb-4 flex items-center"><LucideAlertTriangle className="w-6 h-6 mr-3"/><div><p className="font-bold">An Error Occurred</p><p className="text-sm">{error}</p></div></div>}
+                </Card>
                 
-                {!isRunning && events.length === 0 && !loading && (
-                     <div className="text-center py-16 px-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
-                        <LucideSearch className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4"/>
-                        <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300">Agent is Idle</h3>
-                        <p className="text-gray-500 dark:text-gray-400 mt-2">Press 'Start Agent' to begin searching for financial news.</p>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
-                  {events.map((event, index) => (
-                    <Card key={index} className="flex flex-col transition-transform duration-300 hover:scale-105">
-                      <div className="p-5 flex-grow">
-                        <div className="flex justify-between items-start mb-3">
-                            <div><Badge className={getImpactColor(event.impact)}>{event.impact}</Badge>{event.recommendation && (<Badge className={`ml-2 font-bold ${getRecommendationColor(event.recommendation)}`}>{event.recommendation}</Badge>)}</div>
-                            {getImpactIcon(event.impact)}
+                <Card>
+                    <div className="p-5">
+                        <div className="flex items-center mb-4">
+                            <LucideTarget className="w-7 h-7 text-green-500 mr-3"/>
+                            <h2 className="text-2xl font-bold">Potential Buys</h2>
                         </div>
-                        <h3 className="font-bold text-lg mb-2 text-gray-900 dark:text-white leading-tight">{event.headline}</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 flex-grow">{event.summary}</p>
-                        {event.reason && (<div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700"><p className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center"><LucideLightbulb className="w-4 h-4 mr-1 text-yellow-500"/>AI Recommendation</p><p className="text-xs text-gray-600 dark:text-gray-400 italic">"{event.reason}"</p></div>)}
+                        {allPotentialBuys.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead>
+                                        <tr className="border-b dark:border-gray-700">
+                                            <th className="p-2">Ticker</th><th className="p-2">Action</th><th className="p-2">Source</th><th className="p-2">Current Price</th><th className="p-2">Limit Price</th><th className="p-2">Shares</th><th className="p-2">Risk</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allPotentialBuys.map((buy, index) => {
+                                            const price = portfolioPrices[buy.ticker]?.price || 0;
+                                            return (
+                                                <tr key={index} className="border-b dark:border-gray-700 last:border-b-0">
+                                                    <td className="p-2 font-bold">{buy.ticker}</td>
+                                                    <td className="p-2"><Badge className={getRecommendationColor(buy.action)}>{buy.action}</Badge></td>
+                                                    <td className="p-2"><Badge className="bg-gray-200 text-gray-800">{buy.source}</Badge></td>
+                                                    <td className="p-2">{price > 0 ? `$${price.toFixed(2)}` : <LucideLoader2 className="w-4 h-4 animate-spin"/>}</td>
+                                                    <td className="p-2">{buy.limit_price ? `$${buy.limit_price.toFixed(2)}` : '-'}</td>
+                                                    <td className="p-2">{buy.suggested_shares}</td>
+                                                    <td className="p-2"><Badge className={getRiskColor(buy.risk_level)}>{buy.risk_level}</Badge></td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-center text-gray-500 p-8">No "Buy" recommendations found. Run the agent to find opportunities.</p>
+                        )}
+                    </div>
+                </Card>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <Card>
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center"><LucideBrainCircuit className="w-7 h-7 text-purple-500 mr-3"/><h2 className="text-2xl font-bold">Gemini Ideas</h2></div>
+                        {loadingGeminiRec && <LucideLoader2 className="w-6 h-6 animate-spin text-purple-500" />}
                       </div>
-                      <div className="p-5 bg-gray-50 dark:bg-gray-700/50">
-                         <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-3"><span>{event.source}</span><span>{new Date(event.published_at).toLocaleDateString()}</span></div>
-                        <div className="flex flex-wrap gap-2 mb-4">{event.affected_stocks.map(stock => (<Badge key={stock} className={`bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ${portfolio.some(p=>p.ticker===stock) ? 'ring-2 ring-blue-500' : ''}`}>{stock}</Badge>))}</div>
-                        <button onClick={() => openEventModal(event)} className="w-full text-center text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">View Details</button>
+                      {geminiRec.length > 0 ? (
+                        <div className="space-y-4">
+                            {geminiRec.map((rec, index) => (
+                                <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
+                                    <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                      ) : (<p className="text-center text-gray-500 p-8">Start the agent to generate ideas. Ideas refresh every 3 hours.</p>)}
+                    </div>
+                  </Card>
+                  <Card>
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center"><LucideBot className="w-7 h-7 text-teal-500 mr-3"/><h2 className="text-2xl font-bold">Analyst AI (Sim)</h2></div>
+                        {loadingAnalystRec && <LucideLoader2 className="w-6 h-6 animate-spin text-teal-500" />}
                       </div>
-                    </Card>
-                  ))}
+                       {analystRec.length > 0 ? (
+                        <div className="space-y-4">
+                            {analystRec.map((rec, index) => (
+                               <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
+                                    <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                      ) : (<p className="text-center text-gray-500 p-8">Start the agent to generate ideas. Ideas refresh every 3 hours.</p>)}
+                    </div>
+                  </Card>
+                  <Card>
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center"><LucideBot className="w-7 h-7 text-blue-500 mr-3"/><h2 className="text-2xl font-bold">ChatGPT Ideas</h2></div>
+                        <IconButton onClick={() => fetchRecommendations('chatgpt')} icon={LucideLightbulb} disabled={!chatGptApiKey || loadingChatGptRec} className="bg-blue-500 hover:bg-blue-600 focus:ring-blue-400">Generate</IconButton>
+                      </div>
+                       {loadingChatGptRec ? <div className="flex justify-center items-center p-8"><LucideLoader2 className="w-8 h-8 animate-spin"/></div> : chatGptRec.length > 0 ? (
+                        <div className="space-y-4">
+                            {chatGptRec.map((rec, index) => (
+                               <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
+                                    <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                      ) : (<p className="text-center text-gray-500 p-8">Click "Generate" to get ideas from ChatGPT.</p>)}
+                    </div>
+                  </Card>
+                  <Card>
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center"><LucideBot className="w-7 h-7 text-indigo-500 mr-3"/><h2 className="text-2xl font-bold">Cohere Ideas</h2></div>
+                        <IconButton onClick={() => fetchRecommendations('cohere')} icon={LucideLightbulb} disabled={!cohereApiKey || loadingCohereRec} className="bg-indigo-500 hover:bg-indigo-600 focus:ring-indigo-400">Generate</IconButton>
+                      </div>
+                       {loadingCohereRec ? <div className="flex justify-center items-center p-8"><LucideLoader2 className="w-8 h-8 animate-spin"/></div> : cohereRec.length > 0 ? (
+                        <div className="space-y-4">
+                            {cohereRec.map((rec, index) => (
+                               <div key={index} className="space-y-2 text-sm border-b dark:border-gray-700 last:border-b-0 pb-4 last:pb-0">
+                                    <div className="flex items-center"><Badge className={`text-base mr-3 ${getRecommendationColor(rec.action)}`}>{rec.action}</Badge><span className="font-bold text-lg">{rec.ticker}</span></div><p className="text-gray-600 dark:text-gray-400 italic">"{rec.reason}"</p><div className="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg"><h4 className="font-semibold text-green-800 dark:text-green-300 flex items-center"><LucideShieldCheck className="w-4 h-4 mr-1"/> Prospect</h4><p className="text-green-700 dark:text-green-400 text-xs">{rec.prospect}</p></div><div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg"><h4 className="font-semibold text-red-800 dark:text-red-300 flex items-center"><LucideShieldAlert className="w-4 h-4 mr-1"/> Risk</h4><p className="text-red-700 dark:text-red-400 text-xs">{rec.risk}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                      ) : (<p className="text-center text-gray-500 p-8">Click "Generate" to get ideas from Cohere.</p>)}
+                    </div>
+                  </Card>
                 </div>
-            </div>
-          </section>
-        </div>
-      </main>
+
+                {/* --- Financial Events Feed --- */}
+                <div>
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-2xl font-bold">Financial Events Feed</h2>
+                      {loading && <LucideLoader2 className="w-6 h-6 animate-spin text-blue-500" />}
+                    </div>
+
+                    {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg mb-4 flex items-center"><LucideAlertTriangle className="w-6 h-6 mr-3"/><div><p className="font-bold">An Error Occurred</p><p className="text-sm">{error}</p></div></div>}
+                    
+                    {!isRunning && events.length === 0 && !loading && (
+                         <div className="text-center py-16 px-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
+                            <LucideSearch className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4"/>
+                            <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300">Agent is Idle</h3>
+                            <p className="text-gray-500 dark:text-gray-400 mt-2">Press 'Start Agent' to begin searching for financial news.</p>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
+                      {events.map((event, index) => (
+                        <Card key={index} className="flex flex-col transition-transform duration-300 hover:scale-105">
+                          <div className="p-5 flex-grow">
+                            <div className="flex justify-between items-start mb-3">
+                                <div><Badge className={getImpactColor(event.impact)}>{event.impact}</Badge>{event.recommendation && (<Badge className={`ml-2 font-bold ${getRecommendationColor(event.recommendation)}`}>{event.recommendation}</Badge>)}</div>
+                                {getImpactIcon(event.impact)}
+                            </div>
+                            <h3 className="font-bold text-lg mb-2 text-gray-900 dark:text-white leading-tight">{event.headline}</h3>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 flex-grow">{event.summary}</p>
+                            {event.reason && (<div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700"><p className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center"><LucideLightbulb className="w-4 h-4 mr-1 text-yellow-500"/>AI Recommendation</p><p className="text-xs text-gray-600 dark:text-gray-400 italic">"{event.reason}"</p></div>)}
+                          </div>
+                          <div className="p-5 bg-gray-50 dark:bg-gray-700/50">
+                             <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-3"><span>{event.source}</span><span>{new Date(event.published_at).toLocaleDateString()}</span></div>
+                            <div className="flex flex-wrap gap-2 mb-4">{event.affected_stocks.map(stock => (<Badge key={stock} className={`bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ${portfolio.some(p=>p.ticker===stock) ? 'ring-2 ring-blue-500' : ''}`}>{stock}</Badge>))}</div>
+                            <button onClick={() => openEventModal(event)} className="w-full text-center text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">View Details</button>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                </div>
+            </section>
+          </main>
+      </div>
       <footer className="text-center p-4 mt-8 text-xs text-gray-500 dark:text-gray-400">
         <p>Disclaimer: This is not financial advice. All recommendations are generated by an AI and should be used for informational purposes only.</p>
       </footer>
