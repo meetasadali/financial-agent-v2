@@ -55,18 +55,19 @@ const Modal = ({ isOpen, onClose, title, children }) => {
 
 // --- API Helper ---
 const fetchWithRetry = async (url, options, maxRetries = 3, setError) => {
+    let retryDelay = 5000; // 5 seconds
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         const response = await fetch(url, options);
         if (response.ok) {
             return response.json();
         }
         if (response.status === 429 && attempt < maxRetries - 1) {
-            const retryDelay = 5000 * Math.pow(2, attempt);
             const message = `Rate limit hit. Retrying in ${retryDelay / 1000} seconds...`;
             console.log(message);
             if (setError) setError(message);
             // eslint-disable-next-line no-loop-func
             await new Promise(resolve => setTimeout(resolve, retryDelay));
+            retryDelay *= 2; // Exponential backoff
         } else {
             throw new Error(`API call failed: ${response.status}`);
         }
@@ -458,7 +459,7 @@ const App = () => {
     } finally {
         setLoadingReview(false);
     }
-  }, [geminiApiKey, cohereApiKey, portfolio, fetchWithGeminiFallback]);
+  }, [geminiApiKey, portfolio, fetchWithGeminiFallback]);
   
   const allPotentialBuys = useMemo(() => {
     const buys = [];
